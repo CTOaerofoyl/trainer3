@@ -24,6 +24,9 @@ class ImageTransformer:
                 skew_angle = random.uniform(-10, 10)
                 image = self.skew_image(image, skew_angle)
         
+        # Crop the image to remove excess empty space
+        image = self.crop_to_content(image)
+        
         return image
 
     @staticmethod
@@ -76,3 +79,25 @@ class ImageTransformer:
         skewed_image = cv2.warpAffine(image, transformation_matrix, (new_width, height), flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT, borderValue=(0, 0, 0, 0))
         
         return skewed_image
+
+    @staticmethod
+    def crop_to_content(image):
+        # Convert the image to grayscale to find contours
+        gray = cv2.cvtColor(image, cv2.COLOR_BGRA2GRAY)
+        _, alpha = cv2.threshold(gray, 1, 255, cv2.THRESH_BINARY)
+        
+        # Find contours to get the bounding box of the content
+        contours, _ = cv2.findContours(alpha, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        if contours:
+            x, y, w, h = cv2.boundingRect(contours[0])
+            cropped_image = image[y:y+h, x:x+w]
+        else:
+            cropped_image = image
+        
+        return cropped_image
+
+# # Example usage
+# transformer = ImageTransformer()
+# input_image = cv2.imread('input_image.png', cv2.IMREAD_UNCHANGED)
+# transformed_image = transformer.random_transformation(input_image)
+# cv2.imwrite('output_image.png', transformed_image)

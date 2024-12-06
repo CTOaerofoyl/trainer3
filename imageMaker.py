@@ -123,7 +123,7 @@ class MakeImages:
                     # d = input("Selected dataset directory is not empty. and contains data.yaml, New data will be added to this dataset. Do you want to continue? (y/n): ")
                     d= 'y'
                     if d.lower() == 'y':
-                        with open("input.yaml", "r") as file:
+                        with open(f"{directory}/data.yaml", "r") as file:
                             self.data_yaml = yaml.safe_load(file)  # Use safe_load to avoid arbitrary code execution
                             self.dataset_directory = directory 
                     else:
@@ -150,7 +150,7 @@ class MakeImages:
                 'nc': 0,
                 'names':[]
             }
-            with open("output.yaml", "w") as file:
+            with open(f"{directory}/data.yaml", "w") as file:
                 yaml.dump(self.data_yaml, file, default_flow_style=False)  
 
     def resize_by_factor(self,image,factor):
@@ -227,31 +227,32 @@ class MakeImages:
                             defishParams=self.bip.getdefishParams(ip)
                             padding_info = self.bip.getPadding_info(ip)
                             if defishParams:
-                                fov,fpov =defishParams
+                                fov,pfov =defishParams[0],defishParams[1]
                             else:
                                 fov = 145
                                 pfov = 128
                             refished = refisher.distort(combined,fov=fov,pfov=pfov)
                             h,w = refished.shape[:2]
                             x1,y1,x2,y2 = bbox
-                            x1_t,y1_t = refisher.get_distorted_coordinates(x1,y1,fov=fov,pfov=pfov,width=w,height=h)
-                            x2_t,y2_t = refisher.get_distorted_coordinates(x2,y2,fov=fov,pfov=pfov,width=w,height=h)
+                            x1_t,y1_t = refisher.get_distorted_coordinates(y1,x1,fov=fov,pfov=pfov,width=w,height=h)
+                            x2_t,y2_t = refisher.get_distorted_coordinates(y2,x2,fov=fov,pfov=pfov,width=w,height=h)
                             x1_t -= padding_info['left']
                             x2_t -= padding_info['left']
                             y1_t -= padding_info['top']
                             y2_t -= padding_info['top']
 
                             depadded = self.bip.remove_padding(refished,ip,padding_info)
-                            w_t -= padding_info['left']+padding_info['right']
-                            h_t -= padding_info['top']+padding_info['bottom']
+                            w_t = w - padding_info['left'] - padding_info['right']
+                            h_t = h - padding_info['top'] - padding_info['bottom']
 
-                            cv2.rectangle(depadded, (x1_t,y1_t),(x2_t,y2_t), (255, 0, 0) , thickness=4)
-                            self.bip.show_images_sidebyside(combined,refished,depadded)
-                            # cv2.imwrite(f'{self.dataset_directory}/images/{folder}/{ip}_{clsName}_{i}.jpg',combined)
-                            # with open(f'{self.dataset_directory}/labels/{folder}/{ip}_{clsName}_{i}.txt','w') as f:
-                            #     f.writelines(f'{cls_id} ')
-                            # plt.imshow(combined)
-                            # plt.show()
+
+                            cv2.imwrite(f'{self.dataset_directory}/images/{folder}/{ip}_{clsName}_{i}.jpg',depadded)
+                            with open(f"{self.dataset_directory}/data.yaml", "w") as file:
+                                yaml.dump(self.data_yaml, file, default_flow_style=False)  
+                            with open(f'{self.dataset_directory}/labels/{folder}/{ip}_{clsName}_{i}.txt','w') as f:
+                                f.writelines(f'{cls_id} {x1_t/w_t} {y1_t/h_t} {x2_t/w_t} {y2_t/h_t}')
+                            # cv2.rectangle(depadded, (x1_t,y1_t),(x2_t,y2_t), (255, 0, 0) , thickness=4)
+                            # self.bip.show_images_sidebyside(combined,refished,depadded,transformed_img)
                     
                     # return
 

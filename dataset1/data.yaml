@@ -1,5 +1,7 @@
-names: []
-nc: 0
+names:
+- bag1
+- bag2
+nc: 5
 path: dataset1
 train: images/train
 val: images/val

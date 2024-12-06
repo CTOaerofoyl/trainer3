@@ -21,10 +21,10 @@ h,w = undistorted_image.shape[:2]
 # Define the color (BGR format) and thickness
 color = (0, 255, 0)  # Green color
 thickness = 8  # Thickness of 2 pixels (-1 to fill the rectangle)
-x1 =1000
+x1 =1200
 x2 =1500
 y1 =1000
-y2 =1500
+y2 =2000
 # Draw the rectangle
 cv2.rectangle(undistorted_image, (x1,y1), (x2,y2), color, thickness)
 
@@ -33,9 +33,9 @@ refished = refish.distort(undistorted_image,fov=145,pfov=128)
 # Define the color (BGR format) and thickness
 color = (255, 0, 0)  # Green color
 thickness = 4  # Thickness of 2 pixels (-1 to fill the rectangle)
-top = refish.get_distorted_coordinates(x1,y1,fov=145,pfov=128,width=w,height=h)
+top = refish.get_distorted_coordinates(y1,x1,fov=145,pfov=128,width=w,height=h)
 print(top,(x1,y1))
-bot = refish.get_distorted_coordinates(x2,y2,fov=145,pfov=128,width=w,height=h)
+bot = refish.get_distorted_coordinates(y2,x2,fov=145,pfov=128,width=w,height=h)
 print(bot,(x2,y2))
 # Draw the rectangle
 cv2.rectangle(refished, top,bot, color, thickness)

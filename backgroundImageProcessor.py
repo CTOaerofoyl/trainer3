@@ -109,9 +109,10 @@ class BIP():
             # Convert BGR to RGB if needed
             if len(image.shape) == 3 and image.shape[2] == 3:  # Check if it's a color image
                 image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-            
+            ax.set_facecolor('lightyellow')
+            fig.patch.set_facecolor('lightblue')
             ax.imshow(image)
-            ax.axis('off')  # Turn off axis
+            # ax.axis('off')  # Turn off axis
             if titles and i < len(titles):
                 ax.set_title(titles[i])  # Set title if provided
         

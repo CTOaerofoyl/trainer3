@@ -3,3 +3,5 @@
 *.png
 __pycache__
 *.pt
+train
+labels
