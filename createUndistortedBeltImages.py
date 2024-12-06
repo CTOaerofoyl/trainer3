@@ -13,6 +13,8 @@ for i in range(1,9):
     sqr_img,_ = bip.make_square(image=frame,ip=ip)
     # bip.show_images_sidebyside(sqr_img)
     undistorted_image = bip.defish(sqr_img,ip,fov=145,pfov=128)
+    # img = cv2.imread('Crops/bag1_1.png')
+    # bip.calculateScaleFactor(ip,img,undistorted_image)
 
     rois = roi.draw(undistorted_image)
     bip.saveROIs(ip,rois)

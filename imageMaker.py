@@ -1,23 +1,29 @@
 from backgroundImageProcessor import BIP
 import random
 import math
-
+import yaml
 import os
 import cv2
 import numpy as np
 import shutil
 import matplotlib.pyplot as plt
-MIN_BBOX_SIZE = 5 
+import random
+from ImageTransformer import ImageTransformer
+from ReverseDefisheye import ReverseDefisheye
+
+MIN_BBOX_SIZE = 10  # Example minimum size for bounding boxes
 class MakeImages:
 
     def __init__(self):
         self.crops = self.load_images_to_dict('Crops')
         self.belts = self.load_images_to_dict('undistortedBeltImages')
         self.bip = BIP()
+        self.dataset_directory= ''
+        self.data_yaml = ''
 
 
 
-    def place_bbox_in_roi(self, roi_list, bbox):
+    def place_bbox_in_rotated_roi(self,roi_list, bbox):
         bbox_width, bbox_height = bbox
 
         # Precompute valid placement ranges for each ROI
@@ -26,18 +32,26 @@ class MakeImages:
             center_x, center_y, roi_width, roi_height, angle = roi
             angle_rad = math.radians(angle)
 
-            # Define the effective bounds within the ROI that can accommodate the bounding box
-            x_min = -roi_width / 2 + bbox_width / 2
-            x_max = roi_width / 2 - bbox_width / 2
-            y_min = -roi_height / 2 + bbox_height / 2
-            y_max = roi_height / 2 - bbox_height / 2
+            # Effective bounds considering the bounding box rotation
+            rotated_width = abs(bbox_width * math.cos(angle_rad)) + abs(bbox_height * math.sin(angle_rad))
+            rotated_height = abs(bbox_width * math.sin(angle_rad)) + abs(bbox_height * math.cos(angle_rad))
 
-            if x_min <= x_max and y_min <= y_max:
-                precomputed_ranges.append((center_x, center_y, x_min, x_max, y_min, y_max, angle_rad))
+            # Ensure bounding box fits within the ROI
+            if rotated_width > roi_width or rotated_height > roi_height:
+                continue  # Skip this ROI since the bounding box won't fit
+
+            # Define valid placement ranges in the ROI's local coordinate system
+            x_min = -roi_width / 2 + rotated_width / 2
+            x_max = roi_width / 2 - rotated_width / 2
+            y_min = -roi_height / 2 + rotated_height / 2
+            y_max = roi_height / 2 - rotated_height / 2
+
+            precomputed_ranges.append((center_x, center_y, x_min, x_max, y_min, y_max, angle_rad))
 
         # Try placing the bounding box within the precomputed valid ranges
         for attempt in range(100):
             for center_x, center_y, x_min, x_max, y_min, y_max, angle_rad in precomputed_ranges:
+                # Generate random offsets within valid ranges
                 offset_x = random.uniform(x_min, x_max)
                 offset_y = random.uniform(y_min, y_max)
 
@@ -50,14 +64,14 @@ class MakeImages:
                 y_global = center_y + x_local * math.sin(angle_rad) + y_local * math.cos(angle_rad)
 
                 # Compute bottom-right corner
-                x2_global = x_global + bbox_width * math.cos(angle_rad)
-                y2_global = y_global + bbox_height * math.sin(angle_rad)
+                x2_global = x_global + bbox_width * math.cos(angle_rad) - bbox_height * math.sin(angle_rad)
+                y2_global = y_global + bbox_width * math.sin(angle_rad) + bbox_height * math.cos(angle_rad)
 
                 # Ensure x1 < x2 and y1 < y2 by swapping if necessary
                 x1, x2 = sorted([int(x_global), int(x2_global)])
                 y1, y2 = sorted([int(y_global), int(y2_global)])
 
-                # Calculate bounding box coordinates and check that it fits within the ROI
+                # Check that the bounding box fits entirely within the ROI in global coordinates
                 if (
                     x2 - x1 >= MIN_BBOX_SIZE and y2 - y1 >= MIN_BBOX_SIZE and
                     center_x - roi_width / 2 <= x1 <= center_x + roi_width / 2 and
@@ -67,6 +81,7 @@ class MakeImages:
                 ):
                     return [x1, y1, x2, y2]
 
+        # Return None if no valid placement is found
         return None
 
 
@@ -104,21 +119,43 @@ class MakeImages:
     def createDatasetDirectory(self, directory):
         if os.path.isdir(directory):
             if os.listdir(directory):  # Check if the directory is not empty
-                # d = input("Selected dataset directory is not empty. Continuing will delete the previous dataset. Do you want to continue? (y/n): ")
-                d= 'y'
-                if d.lower() == 'y':
-                    shutil.rmtree(directory)  # Delete the directory and its contents
-                    self.createDatasetDirectory(directory)
+                if os.path.exists(f'{directory}/data.yaml'):
+                    # d = input("Selected dataset directory is not empty. and contains data.yaml, New data will be added to this dataset. Do you want to continue? (y/n): ")
+                    d= 'y'
+                    if d.lower() == 'y':
+                        with open("input.yaml", "r") as file:
+                            self.data_yaml = yaml.safe_load(file)  # Use safe_load to avoid arbitrary code execution
+                            self.dataset_directory = directory 
+                    else:
+                        newDirName = input("Enter new directory name : ")
+                        self.createDatasetDirectory(newDirName)
+                    return
                 else:
-                    newDirName = input("Enter new directory name : ")
-                    self.createDatasetDirectory(newDirName)
-                return
+                        newDirName = input("the dataset directory is present but does not contain data.yaml hence is not usable. Enter new directory name : ")
+                        self.createDatasetDirectory(newDirName)
+
         else:
             print(f"Creating Dataset Directory {directory}")
-            os.makedirs(f"{directory}/train/images", exist_ok=True)
-            os.makedirs(f"{directory}/train/labels", exist_ok=True)
-            os.makedirs(f"{directory}/val/images", exist_ok=True)
-            os.makedirs(f"{directory}/val/labels", exist_ok=True)
+            self
+            os.makedirs(f"{directory}/images/train", exist_ok=True)
+            os.makedirs(f"{directory}/labels/train", exist_ok=True)
+            os.makedirs(f"{directory}/images/val", exist_ok=True)
+            os.makedirs(f"{directory}/labels/val", exist_ok=True)
+            self.dataset_directory = directory 
+            self.data_yaml = {
+                'path':directory,
+                'train': 'images/train',
+                'val': 'images/val',
+                # Number of classes
+                'nc': 0,
+                'names':[]
+            }
+            with open("output.yaml", "w") as file:
+                yaml.dump(self.data_yaml, file, default_flow_style=False)  
+
+    def resize_by_factor(self,image,factor):
+        image = cv2.resize(image,(0,0),fx=factor,fy=factor)
+        return image
 
     def mergeImages(self,background ,foreground ,bbox):
         x1,y1,x2,y2 = bbox 
@@ -140,20 +177,83 @@ class MakeImages:
         background[y1:y2, x1:x2] = blended_roi
         return background
     
+    def get_or_add_index(self,array, element):
+        """
+        Get the index of an element in an array. 
+        If the element is not present, add it to the array and return its index.
+        
+        Args:
+            array (list): The array to search or modify.
+            element (Any): The element to find or add.
+        
+        Returns:
+            int: The index of the element in the array.
+        """
+        if element in array:
+            return array.index(element)
+        else:
+            array.append(element)
+            return len(array) - 1
+        
+
 
     def makeImage(self):
+        
+        transformer = ImageTransformer()
+        refisher = ReverseDefisheye()
         for clsName,img in self.crops.items():
-            h,w = img.shape[:2]
-            for ip,belt in self.belts.items():
-                rois = self.bip.getRois(ip)
-                print(ip,rois)
-                bbox = self.place_bbox_in_roi(rois,[w,h])
-                if bbox:
-                    combined = self.mergeImages(belt,img,bbox)
+            cls = clsName.split('_')[0]
+            cls_id = self.get_or_add_index(self.data_yaml['names'],cls)
+            self.data_yaml['nc']=len(self.data_yaml)
+            for ip,belt_ref in self.belts.items():
+                for folder in ['train','val']:
+                    num = 30 if folder == 'train' else 20
+                    for i in range(0,num):
+                        belt=belt_ref.copy()
+                        img_copy = img.copy()
+                        resize_factor=self.bip.getScaleFactor(ip)
+                        
+                        transformed_img = transformer.random_transformation(img)
+                        h,w = transformed_img.shape[:2]
+                        w_res = w*resize_factor
+                        h_res = h*resize_factor
+                        # hb,wb = belt.shape[:2]
+                        rois = self.bip.getRois(ip)
+                        print(ip,rois)
+                        bbox = self.place_bbox_in_rotated_roi(rois,[w_res,h_res])
+                        # bbox = [(wb-w)//2,(hb-h)//2,(wb+w)//2,(hb+h)//2]
+                        if bbox:
+                            combined = self.mergeImages(belt,transformed_img,bbox)
+                            defishParams=self.bip.getdefishParams(ip)
+                            padding_info = self.bip.getPadding_info(ip)
+                            if defishParams:
+                                fov,fpov =defishParams
+                            else:
+                                fov = 145
+                                pfov = 128
+                            refished = refisher.distort(combined,fov=fov,pfov=pfov)
+                            h,w = refished.shape[:2]
+                            x1,y1,x2,y2 = bbox
+                            x1_t,y1_t = refisher.get_distorted_coordinates(x1,y1,fov=fov,pfov=pfov,width=w,height=h)
+                            x2_t,y2_t = refisher.get_distorted_coordinates(x2,y2,fov=fov,pfov=pfov,width=w,height=h)
+                            x1_t -= padding_info['left']
+                            x2_t -= padding_info['left']
+                            y1_t -= padding_info['top']
+                            y2_t -= padding_info['top']
+
+                            depadded = self.bip.remove_padding(refished,ip,padding_info)
+                            w_t -= padding_info['left']+padding_info['right']
+                            h_t -= padding_info['top']+padding_info['bottom']
+
+                            cv2.rectangle(depadded, (x1_t,y1_t),(x2_t,y2_t), (255, 0, 0) , thickness=4)
+                            self.bip.show_images_sidebyside(combined,refished,depadded)
+                            # cv2.imwrite(f'{self.dataset_directory}/images/{folder}/{ip}_{clsName}_{i}.jpg',combined)
+                            # with open(f'{self.dataset_directory}/labels/{folder}/{ip}_{clsName}_{i}.txt','w') as f:
+                            #     f.writelines(f'{cls_id} ')
+                            # plt.imshow(combined)
+                            # plt.show()
                     
-                    plt.imshow(combined)
-                    plt.show()
-                    return
+                    # return
 
 
 

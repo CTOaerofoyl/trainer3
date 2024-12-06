@@ -7,8 +7,9 @@ import matplotlib.pyplot as plt
 
 
 class BIP():
-    def __init__(self):
-        self.configFileName = 'camConfig.json'
+    def __init__(self,saveCamConfig=True):
+        self.saveCamConfig = saveCamConfig
+        self.configFileName = 'camConfig1.json'
         self.configJSON = self.read_or_create_json(self.configFileName)
         self.defisher = Defisheye()
         self.reFishEye = ReverseDefisheye()
@@ -23,6 +24,8 @@ class BIP():
         Returns:
             dict: The content of the JSON file as a dictionary.
         """
+        if not self.saveCamConfig:
+            return {}
         if not os.path.exists(file_path):
             # Create the file with an empty dictionary
             with open(file_path, 'w') as file:
@@ -76,9 +79,9 @@ class BIP():
             self.configJSON[ip]['padding_info']= padding_info
         else:
             self.configJSON[ip] = {'padding_info':padding_info}
-
-        with open(self.configFileName,'w') as file:
-            json.dump(self.configJSON, file, indent=4) 
+        if self.saveCamConfig:
+            with open(self.configFileName,'w') as file:
+                json.dump(self.configJSON, file, indent=4) 
 
         return padded_image, padding_info
     
@@ -129,9 +132,9 @@ class BIP():
             self.configJSON[ip]['defishParams']= [fov,pfov]
         else:
             self.configJSON[ip] = {'defishParams': [fov,pfov]}
-
-        with open(self.configFileName,'w') as file:
-            json.dump(self.configJSON, file, indent=4) 
+        if self.saveCamConfig:
+            with open(self.configFileName,'w') as file:
+                json.dump(self.configJSON, file, indent=4) 
         return self.defisher.convert(image,fov=fov,pfov=pfov)
     
     
@@ -162,3 +165,49 @@ class BIP():
             if 'ROIs' in self.configJSON[ip]:
                 return self.configJSON[ip]['ROIs']
         return []
+    
+    def getScaleFactor(self,ip):
+        if ip in self.configJSON:
+            if 'resize_factor' in self.configJSON[ip]:
+                return self.configJSON[ip]['resize_factor']
+        return []
+    
+    def getdefishParams(self,ip):
+        if ip in self.configJSON:
+            if 'defishParams' in self.configJSON[ip]:
+                return self.configJSON[ip]['defishParams']
+        return None
+    
+    def getPadding_info(self,ip):
+        if ip in self.configJSON:
+            if 'padding_info' in self.configJSON[ip]:
+                return self.configJSON[ip]['padding_info']
+        return None
+
+    
+    def resize_by_factor(self,image,factor):
+        image = cv2.resize(image,(0,0),fx=factor,fy=factor)
+        return image
+
+    def calculateScaleFactor(self,ip,referenceImage,backgroundImage):
+        factor = 1
+        while True:
+            try:
+                tempImage = backgroundImage.copy()
+                resized_imge = self.resize_by_factor(referenceImage,factor)
+                rows, cols, channels = resized_imge.shape
+                tempImage[0:rows, 0:cols] = resized_imge
+                self.show_images_sidebyside(tempImage,titles=[f'scaled by {factor}'])
+                factor = float(input("Enter resize factor. Enter q to finish"))
+                
+            except:
+                print(factor)
+                if ip in self.configJSON:
+                    self.configJSON[ip]['resize_factor']= factor
+                else:
+                    self.configJSON[ip] = {'resize_factor':factor}
+
+                with open(self.configFileName,'w') as file:
+                    json.dump(self.configJSON, file, indent=4) 
+                return factor
+

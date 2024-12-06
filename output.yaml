@@ -1,0 +1,5 @@
+names: []
+nc: 0
+path: b1
+train: images/train
+val: images/val
