@@ -5,7 +5,7 @@ import cv2
 bip = BIP()
 roi = RotatedRectangleDrawer()
 
-for i in range(1,9):
+for i in range(6,8):
     ip = f'192.168.1.22{i}'
     cap = cv2.VideoCapture(f'rtsp://admin:PAG00319@{ip}:554/live')
     ret,frame = cap.read()

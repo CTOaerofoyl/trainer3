@@ -81,19 +81,41 @@ class ImageTransformer:
         return skewed_image
 
     @staticmethod
-    def crop_to_content(image):
-        # Convert the image to grayscale to find contours
-        gray = cv2.cvtColor(image, cv2.COLOR_BGRA2GRAY)
-        _, alpha = cv2.threshold(gray, 1, 255, cv2.THRESH_BINARY)
-        
-        # Find contours to get the bounding box of the content
-        contours, _ = cv2.findContours(alpha, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    def crop_to_content(image, debug=False):
+        """
+        Crops the given image to remove transparent borders caused by rotation.
+
+        Parameters:
+            image (numpy.ndarray): Input image (BGRA).
+            debug (bool): Whether to display debugging visuals (default: False).
+
+        Returns:
+            numpy.ndarray: Cropped image.
+        """
+        # Extract the alpha channel to find non-transparent regions
+        alpha_channel = image[:, :, 3]
+        _, binary_alpha = cv2.threshold(alpha_channel, 1, 255, cv2.THRESH_BINARY)
+
+        # Find contours based on the non-transparent regions
+        contours, _ = cv2.findContours(binary_alpha, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
         if contours:
-            x, y, w, h = cv2.boundingRect(contours[0])
+            # Calculate the bounding rectangle of the non-transparent area
+            x, y, w, h = cv2.boundingRect(np.vstack(contours))
             cropped_image = image[y:y+h, x:x+w]
         else:
+            # If no contours are found, return the original image
             cropped_image = image
-        
+
+        if debug:
+            # Create a copy of the image to draw contours for debugging
+            debug_image = image.copy()
+            debug_image = cv2.cvtColor(debug_image, cv2.COLOR_BGRA2BGR)  # Remove alpha for visualization
+            cv2.drawContours(debug_image, contours, -1, (0, 255, 0), 2)
+            cv2.imshow('Debug - Contours', debug_image)
+            cv2.waitKey(0)
+            cv2.destroyAllWindows()
+
         return cropped_image
 
 # # Example usage

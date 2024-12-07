@@ -131,6 +131,73 @@ class Defisheye:
         if outfile is not None:
             cv2.imwrite(outfile, img)
         return img
+    def getMaps(self, infile, **kwargs):
+        vkwargs = {"fov": 140,
+                   "pfov": 120,
+                   "xcenter": None,
+                   "ycenter": None,
+                   "radius": None,
+                   "pad": 0,
+                   "angle": 0,
+                   "dtype": "equalarea",
+                   "format": "fullframe"
+                   }
+        self._start_att(vkwargs, kwargs)
+
+        if type(infile) == str:
+            _image = cv2.imread(infile)
+        elif type(infile) == ndarray:
+            _image = infile
+        else:
+            raise Exception("Image format not recognized")
+
+        if self._pad > 0:
+            _image = cv2.copyMakeBorder(
+                _image, self._pad, self._pad, self._pad, self._pad, cv2.BORDER_CONSTANT)
+
+        width = _image.shape[1]
+        height = _image.shape[0]
+        xcenter = width // 2
+        ycenter = height // 2
+
+        dim = min(width, height)
+        x0 = xcenter - dim // 2
+        xf = xcenter + dim // 2
+        y0 = ycenter - dim // 2
+        yf = ycenter + dim // 2
+
+        self._image = _image[y0:yf, x0:xf, :]
+
+        self._width = self._image.shape[1]
+        self._height = self._image.shape[0]
+
+        if self._xcenter is None:
+            self._xcenter = (self._width - 1) // 2
+
+        if self._ycenter is None:
+            self._ycenter = (self._height - 1) // 2
+
+        
+        if self._format == "circular":
+            dim = min(self._width, self._height)
+        elif self._format == "fullframe":
+            dim = sqrt(self._width ** 2.0 + self._height ** 2.0)
+
+        if self._radius is not None:
+            dim = 2 * self._radius
+
+
+        ofoc = dim / (2 * tan(self._pfov * pi / 360))
+        ofocinv = 1.0 / ofoc
+
+        i = arange(self._width)
+        j = arange(self._height)
+        i, j = meshgrid(i, j)
+
+        xs, ys, = self._map(i, j, ofocinv, dim)
+        img = cv2.remap(self._image, xs, ys, cv2.INTER_LINEAR)
+        return xs, ys, img
+
 
     def _start_att(self, vkwargs, kwargs):
         """

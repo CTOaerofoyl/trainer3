@@ -109,7 +109,7 @@ class BIP():
             # Convert BGR to RGB if needed
             if len(image.shape) == 3 and image.shape[2] == 3:  # Check if it's a color image
                 image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-            ax.set_facecolor('lightyellow')
+            ax.set_facecolor('lightgreen')
             fig.patch.set_facecolor('lightblue')
             ax.imshow(image)
             # ax.axis('off')  # Turn off axis
@@ -118,7 +118,7 @@ class BIP():
         
         plt.tight_layout()
         plt.show()
-    def defish(self,image,ip,fov = None,pfov = None):
+    def defish(self,image,ip,fov = None,pfov = None,save = True):
         if fov is None or pfov is None:
             camInit = False
             if ip in self.configJSON:
@@ -129,13 +129,14 @@ class BIP():
             if not camInit:
                 print('This cam is not initialized yet, provide fov and pfov values')
                 return
-        if ip in self.configJSON:
-            self.configJSON[ip]['defishParams']= [fov,pfov]
-        else:
-            self.configJSON[ip] = {'defishParams': [fov,pfov]}
-        if self.saveCamConfig:
-            with open(self.configFileName,'w') as file:
-                json.dump(self.configJSON, file, indent=4) 
+        if save:
+            if ip in self.configJSON:
+                self.configJSON[ip]['defishParams']= [fov,pfov]
+            else:
+                self.configJSON[ip] = {'defishParams': [fov,pfov]}
+            if self.saveCamConfig:
+                with open(self.configFileName,'w') as file:
+                    json.dump(self.configJSON, file, indent=4) 
         return self.defisher.convert(image,fov=fov,pfov=pfov)
     
     

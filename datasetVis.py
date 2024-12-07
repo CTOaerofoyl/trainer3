@@ -48,7 +48,7 @@ for image_file in image_files:
     # Save the image with bounding boxes
 
     # Display the image (optional)
-    cv2.namedWindow('a',cv2.WINDOW_NORMALqq)
+    cv2.namedWindow('a',cv2.WINDOW_NORMAL)
     cv2.imshow('a', image)
     cv2.waitKey(0)
 

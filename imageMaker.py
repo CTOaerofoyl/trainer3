@@ -79,10 +79,12 @@ class MakeImages:
                     center_x - roi_width / 2 <= x2 <= center_x + roi_width / 2 and
                     center_y - roi_height / 2 <= y2 <= center_y + roi_height / 2
                 ):
-                    return [x1, y1, x2, y2]
+                    return [x1, y1, x2, y2], False
 
         # Return None if no valid placement is found
-        return None
+        return None,True
+
+
 
 
 
@@ -198,61 +200,81 @@ class MakeImages:
 
 
     def makeImage(self):
-        
+        data = np.load('defisheye_maps.npz')
+
+        # Access individual matrices
+        xs = data['xs']
+        ys = data['ys']
+
         transformer = ImageTransformer()
         refisher = ReverseDefisheye()
         for clsName,img in self.crops.items():
             cls = clsName.split('_')[0]
             cls_id = self.get_or_add_index(self.data_yaml['names'],cls)
-            self.data_yaml['nc']=len(self.data_yaml)
+            self.data_yaml['nc']=len(self.data_yaml['names'])
             for ip,belt_ref in self.belts.items():
                 for folder in ['train','val']:
-                    num = 30 if folder == 'train' else 20
+                    num = 5 if folder == 'train' else 2
                     for i in range(0,num):
                         belt=belt_ref.copy()
                         img_copy = img.copy()
                         resize_factor=self.bip.getScaleFactor(ip)
-                        
-                        transformed_img = transformer.random_transformation(img)
-                        h,w = transformed_img.shape[:2]
-                        w_res = w*resize_factor
-                        h_res = h*resize_factor
-                        # hb,wb = belt.shape[:2]
-                        rois = self.bip.getRois(ip)
-                        print(ip,rois)
-                        bbox = self.place_bbox_in_rotated_roi(rois,[w_res,h_res])
-                        # bbox = [(wb-w)//2,(hb-h)//2,(wb+w)//2,(hb+h)//2]
-                        if bbox:
-                            combined = self.mergeImages(belt,transformed_img,bbox)
-                            defishParams=self.bip.getdefishParams(ip)
-                            padding_info = self.bip.getPadding_info(ip)
-                            if defishParams:
-                                fov,pfov =defishParams[0],defishParams[1]
-                            else:
-                                fov = 145
-                                pfov = 128
-                            refished = refisher.distort(combined,fov=fov,pfov=pfov)
-                            h,w = refished.shape[:2]
-                            x1,y1,x2,y2 = bbox
-                            x1_t,y1_t = refisher.get_distorted_coordinates(y1,x1,fov=fov,pfov=pfov,width=w,height=h)
-                            x2_t,y2_t = refisher.get_distorted_coordinates(y2,x2,fov=fov,pfov=pfov,width=w,height=h)
-                            x1_t -= padding_info['left']
-                            x2_t -= padding_info['left']
-                            y1_t -= padding_info['top']
-                            y2_t -= padding_info['top']
+                        tryPlacement = True
+                        numTries = 0
+                        while tryPlacement and numTries<11:
+                            numTries += 1
+                            transformed_img = transformer.random_transformation(img)
+                            h,w = transformed_img.shape[:2]
+                            w_res = w*resize_factor
+                            h_res = h*resize_factor
+                            # hb,wb = belt.shape[:2]
+                            rois = self.bip.getRois(ip)
+                            print(ip,rois)
+                            bbox,tryPlacement = self.place_bbox_in_rotated_roi(rois,[w_res,h_res])
+                            # bbox = [(wb-w)//2,(hb-h)//2,(wb+w)//2,(hb+h)//2]
+                            if bbox:
+                                combined = self.mergeImages(belt,transformed_img,bbox)
+                                defishParams=self.bip.getdefishParams(ip)
+                                padding_info = self.bip.getPadding_info(ip)
+                                if defishParams:
+                                    fov,pfov =defishParams[0],defishParams[1]
+                                else:
+                                    fov = 145
+                                    pfov = 128
+                                refished = refisher.distort(combined,fov=fov,pfov=pfov)
+                                h,w = refished.shape[:2]
+                                x1,y1,x2,y2 = bbox
+                                x_tl = int(ys[x1,y1])
+                                x_bl = int(ys[x1,y2])
+                                x_tr = int(ys[x2,y1])
+                                x_br = int(ys[x2,y2])
+                                y_tl = int(xs[x1,y1])
+                                y_bl = int(xs[x1,y2])
+                                y_tr = int(xs[x2,y1])
+                                y_br = int(xs[x2,y2])
 
-                            depadded = self.bip.remove_padding(refished,ip,padding_info)
-                            w_t = w - padding_info['left'] - padding_info['right']
-                            h_t = h - padding_info['top'] - padding_info['bottom']
+                                x1_t,y1_t = (min(x_tl,x_bl),min(y_tl,y_tr))
+                                x2_t,y2_t = (max(x_tr,x_br),max(y_bl,y_br))
+
+                                # x1_t,y1_t = refisher.get_distorted_coordinates(y1,x1,fov=fov,pfov=pfov,width=w,height=h)
+                                # x2_t,y2_t = refisher.get_distorted_coordinates(y2,x2,fov=fov,pfov=pfov,width=w,height=h)
+                                x1_t -= padding_info['left']
+                                x2_t -= padding_info['left']
+                                y1_t -= padding_info['top']
+                                y2_t -= padding_info['top']
+
+                                depadded = self.bip.remove_padding(refished,ip,padding_info)
+                                w_t = w - padding_info['left'] - padding_info['right']
+                                h_t = h - padding_info['top'] - padding_info['bottom']
 
 
-                            cv2.imwrite(f'{self.dataset_directory}/images/{folder}/{ip}_{clsName}_{i}.jpg',depadded)
-                            with open(f"{self.dataset_directory}/data.yaml", "w") as file:
-                                yaml.dump(self.data_yaml, file, default_flow_style=False)  
-                            with open(f'{self.dataset_directory}/labels/{folder}/{ip}_{clsName}_{i}.txt','w') as f:
-                                f.writelines(f'{cls_id} {x1_t/w_t} {y1_t/h_t} {x2_t/w_t} {y2_t/h_t}')
-                            # cv2.rectangle(depadded, (x1_t,y1_t),(x2_t,y2_t), (255, 0, 0) , thickness=4)
-                            # self.bip.show_images_sidebyside(combined,refished,depadded,transformed_img)
+                                cv2.imwrite(f'{self.dataset_directory}/images/{folder}/{ip}_{clsName}_{i}.jpg',depadded)
+                                with open(f"{self.dataset_directory}/data.yaml", "w") as file:
+                                    yaml.dump(self.data_yaml, file, default_flow_style=False)  
+                                with open(f'{self.dataset_directory}/labels/{folder}/{ip}_{clsName}_{i}.txt','w') as f:
+                                    f.writelines(f'{cls_id} {x1_t/w_t} {y1_t/h_t} {x2_t/w_t} {y2_t/h_t}')
+                                # cv2.rectangle(depadded, (x1_t,y1_t),(x2_t,y2_t), (255, 0, 0) , thickness=4)
+                                # self.bip.show_images_sidebyside(combined,refished,depadded,transformed_img)
                     
                     # return
 
