@@ -1,0 +1,8 @@
+names:
+- bag1
+- bag2
+- pill
+nc: 3
+path: dataset7
+train: images/train
+val: images/val

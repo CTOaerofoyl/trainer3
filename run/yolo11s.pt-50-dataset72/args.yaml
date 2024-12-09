@@ -1,10 +1,10 @@
 task: detect
 mode: train
-model: yolo11n.pt
-data: dataset1/data.yaml
-epochs: 35
+model: yolo11s.pt
+data: dataset7/data.yaml
+epochs: 50
 time: null
-patience: 100
+patience: 30
 batch: -1
 imgsz: 640
 save: true
@@ -13,7 +13,7 @@ cache: false
 device: cuda
 workers: 8
 project: run
-name: 11n-35-training3
+name: yolo11s.pt-50-dataset72
 exist_ok: false
 pretrained: true
 optimizer: auto
@@ -28,7 +28,7 @@ resume: false
 amp: true
 fraction: 1.0
 profile: false
-freeze: null
+freeze: 10
 multi_scale: false
 overlap_mask: true
 mask_ratio: 4
@@ -103,4 +103,4 @@ erasing: 0.4
 crop_fraction: 1.0
 cfg: null
 tracker: botsort.yaml
-save_dir: run\11n-35-training3
+save_dir: run\yolo11s.pt-50-dataset72

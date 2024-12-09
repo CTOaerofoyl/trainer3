@@ -199,7 +199,7 @@ class MakeImages:
         
 
 
-    def makeImage(self):
+    def makeImage(self,classes_to_skip=[]):
         data = np.load('defisheye_maps.npz')
 
         # Access individual matrices
@@ -208,13 +208,17 @@ class MakeImages:
 
         transformer = ImageTransformer()
         refisher = ReverseDefisheye()
+
         for clsName,img in self.crops.items():
+            if clsName in classes_to_skip:
+                continue
+
             cls = clsName.split('_')[0]
             cls_id = self.get_or_add_index(self.data_yaml['names'],cls)
             self.data_yaml['nc']=len(self.data_yaml['names'])
             for ip,belt_ref in self.belts.items():
                 for folder in ['train','val']:
-                    num = 5 if folder == 'train' else 2
+                    num = 3 if folder == 'train' else 1
                     for i in range(0,num):
                         belt=belt_ref.copy()
                         img_copy = img.copy()
@@ -266,13 +270,16 @@ class MakeImages:
                                 depadded = self.bip.remove_padding(refished,ip,padding_info)
                                 w_t = w - padding_info['left'] - padding_info['right']
                                 h_t = h - padding_info['top'] - padding_info['bottom']
-
+                                x_center = (x1_t + x2_t) / 2
+                                y_center = (y1_t + y2_t) / 2
+                                width = x2_t - x1_t
+                                height = y2_t - y1_t
 
                                 cv2.imwrite(f'{self.dataset_directory}/images/{folder}/{ip}_{clsName}_{i}.jpg',depadded)
                                 with open(f"{self.dataset_directory}/data.yaml", "w") as file:
                                     yaml.dump(self.data_yaml, file, default_flow_style=False)  
                                 with open(f'{self.dataset_directory}/labels/{folder}/{ip}_{clsName}_{i}.txt','w') as f:
-                                    f.writelines(f'{cls_id} {x1_t/w_t} {y1_t/h_t} {x2_t/w_t} {y2_t/h_t}')
+                                    f.writelines(f'{cls_id} {x_center/w_t} {y_center/h_t} {width/w_t} {height/h_t}')
                                 # cv2.rectangle(depadded, (x1_t,y1_t),(x2_t,y2_t), (255, 0, 0) , thickness=4)
                                 # self.bip.show_images_sidebyside(combined,refished,depadded,transformed_img)
                     
@@ -283,6 +290,8 @@ class MakeImages:
 
 if __name__=='__main__':
     imagemaker = MakeImages()
-    imagemaker.createDatasetDirectory('dataset1')
-    imagemaker.makeImage()
+    imagemaker.createDatasetDirectory('dataset7')
+    
+    classes_to_skip=['bag1','bag2']
+    imagemaker.makeImage(classes_to_skip)
 
