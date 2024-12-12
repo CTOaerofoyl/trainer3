@@ -1,7 +1,7 @@
 task: detect
 mode: train
-model: yolo11s.pt
-data: dataset7/data.yaml
+model: train2/yolo11s.pt
+data: dataset0/data.yaml
 epochs: 50
 time: null
 patience: 30
@@ -13,7 +13,7 @@ cache: false
 device: cuda
 workers: 8
 project: run
-name: yolo11s.pt-50-dataset7
+name: yolo11s.pt-50-dataset0
 exist_ok: false
 pretrained: true
 optimizer: auto
@@ -103,4 +103,4 @@ erasing: 0.4
 crop_fraction: 1.0
 cfg: null
 tracker: botsort.yaml
-save_dir: run\yolo11s.pt-50-dataset7
+save_dir: run\yolo11s.pt-50-dataset0

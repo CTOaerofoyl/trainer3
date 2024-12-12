@@ -9,17 +9,18 @@ if __name__ == "__main__":
 
     model_name = 'yolo11s.pt'
 
-    model = YOLO(model_name)
+    model = YOLO(f'train2/{model_name}')
+
 
     # Define a directory to save all trained models
     save_directory = 'train2'
-    dataset ='dataset7'
+    dataset ='dataset4'
     dataset_path = f'{dataset}/data.yaml'
 
         # Print the training results
 
     os.makedirs(save_directory, exist_ok=True)
-    epochs = 50
+    epochs = 100
 
 
     # Train the model
@@ -37,7 +38,9 @@ if __name__ == "__main__":
         freeze=10
     )
 
-    print(f"Training completed in {time.time() - start_time:.2f} seconds")
 
-    model.save(os.path.join(save_directory, f'{model_name}-{epochs}-{dataset}.pt'))
     model.save(os.path.join(save_directory, f'best.pt'))
+    model.save(os.path.join(save_directory, f'{model_name}-{epochs}-{dataset.replace('/','_')}.pt'))
+
+    
+    print(f"Training completed in {time.time() - start_time:.2f} seconds")

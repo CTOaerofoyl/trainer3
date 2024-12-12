@@ -14,7 +14,8 @@ class SegmentationApp(QtWidgets.QMainWindow):
         # Initialize variables
         self.image = None
         self.overlay = None
-        self.current_points = []
+        self.current_positive_points = []
+        self.current_negative_points = []
         self.all_points = []
         self.object_counter = 1
         self.model = SAM("sam_b.pt")  # Load SAM model
@@ -159,13 +160,20 @@ class SegmentationApp(QtWidgets.QMainWindow):
         aggregated_results = []
 
         for points in self.all_points:
-            labels = [1] * len(points)  # Create labels for the current object
-            points_formatted = [list(point) for point in points]  # Format points
-            print(f"Points: {points_formatted}")
-            print(f"Labels: {labels}")
+            labels_positive = [1] * len(points[0])  # Create labels for the current object
+            labels_negative = [0] * len(points[1])  # Create labels for the current object
+            points_formatted_positive = [list(point) for point in points[0]]  # Format points
+            points_formatted_negative = [list(point) for point in points[1]]  # Format points
+            print(f"Positive Points: {points_formatted_positive}")
+            print(f"Negative Points: {points_formatted_negative}")
+            
+            print(f"Labels positive: {labels_positive}")
+            print(f"Labels negative: {labels_negative}")
+
 
             # Run inference with SAM for each object
-            results = self.model(self.image, points=[points_formatted], labels=[labels])
+            results = self.model(self.image, points=[points_formatted_positive+points_formatted_negative], labels=[labels_positive+labels_negative])
+
             aggregated_results.extend(results)
 
         self.current_results = aggregated_results
@@ -206,7 +214,28 @@ class SegmentationApp(QtWidgets.QMainWindow):
             scaled_x = int(x * self.image.shape[1] / self.image_label.width())
             scaled_y = int(y * self.image.shape[0] / self.image_label.height())
 
-            self.current_points.append((scaled_x, scaled_y))
+            self.current_positive_points.append((scaled_x, scaled_y))
+            # Draw a circle for the clicked point on the overlay
+            cv2.circle(self.overlay, (scaled_x, scaled_y), 5, (0, 255, 0), -1)
+            self.display_image(self.overlay)
+            print(f"Object {self.object_counter}: Point selected - {scaled_x}, {scaled_y}")
+            self.undo_stack.append(("mark_point", (scaled_x, scaled_y), self.all_points.copy(), self.segmented_images.copy()))  # Add action to undo stack
+            self.redo_stack.clear()  # Clear redo stack after new action
+            self.undo_action.setEnabled(True)
+            self.redo_action.setEnabled(False)
+            self.finalize_action.setEnabled(True)
+
+            self.finalize_current_object(True)
+            self.segment_with_points()
+        elif event.button() == QtCore.Qt.RightButton:
+            x = event.pos().x()
+            y = event.pos().y()
+
+            # Scale points to match the original image size
+            scaled_x = int(x * self.image.shape[1] / self.image_label.width())
+            scaled_y = int(y * self.image.shape[0] / self.image_label.height())
+
+            self.current_negative_points.append((scaled_x, scaled_y))
             # Draw a circle for the clicked point on the overlay
             cv2.circle(self.overlay, (scaled_x, scaled_y), 5, (0, 255, 0), -1)
             self.display_image(self.overlay)
@@ -220,19 +249,26 @@ class SegmentationApp(QtWidgets.QMainWindow):
 
     def finalize_current_object(self, temporary=False):
         if temporary:
-            if self.current_points:
+            if self.current_positive_points:
                 if len(self.all_points) < self.object_counter:
-                    self.all_points.extend([self.current_points[:]])
+                    self.all_points.extend([[self.current_positive_points[:],[]]])
+                else:
+                    self.all_points[self.object_counter - 1][0] = self.current_positive_points[:]
+                
+            if self.current_negative_points:
+                if len(self.all_points) < self.object_counter:
+                    self.all_points.extend([[[],self.current_negative_points[:]]])
                     return
-                self.all_points[self.object_counter - 1] = self.current_points[:]
+                self.all_points[self.object_counter - 1][1] = self.current_negative_points[:]
                 return
-        
-        if self.current_points:
-            self.all_points.append(self.current_points[:])  # Save the current object's points
-            print(f"Object {self.object_counter} points finalized: {self.current_points}")
-            self.undo_stack.append(("finalize", self.current_points[:], self.all_points.copy(), self.segmented_images.copy()))  # Add action to undo stack
+            return
+
+        if self.current_positive_points:
+            self.all_points.append([self.current_positive_points[:],self.current_negative_points[:]])  # Save the current object's points
+            print(f"Object {self.object_counter} points finalized: {self.current_positive_points}")
+            self.undo_stack.append(("finalize", self.current_positive_points[:], self.all_points.copy(), self.segmented_images.copy()))  # Add action to undo stack
             self.redo_stack.clear()  # Clear redo stack after new action
-            self.current_points.clear()  # Clear for the next object
+            self.current_positive_points.clear()  # Clear for the next object
             self.object_counter += 1  # Increment the object counter
             self.undo_action.setEnabled(True)
             self.redo_action.setEnabled(False)
@@ -244,7 +280,6 @@ class SegmentationApp(QtWidgets.QMainWindow):
             child = self.segmented_images_layout.takeAt(0)
             if child.widget():
                 child.widget().deleteLater()
-
     def display_results(self, results):
         # Create a copy of the original image to overlay segmentation results
         result_overlay = self.image.copy()
@@ -263,8 +298,8 @@ class SegmentationApp(QtWidgets.QMainWindow):
                     # Create a translucent mask overlay
                     for c in range(3):
                         result_overlay[..., c] = np.where(mask_array == 1, 
-                                                          (0.5 * result_overlay[..., c] + 0.5 * color[c]).astype(np.uint8),
-                                                          result_overlay[..., c])
+                                                        (0.5 * result_overlay[..., c] + 0.5 * color[c]).astype(np.uint8),
+                                                        result_overlay[..., c])
 
                     # Crop the segmented region from the original image and apply the mask for transparency
                     x1, y1, x2, y2 = [int(i) for i in result.boxes.xyxy[0].cpu()]
@@ -278,11 +313,16 @@ class SegmentationApp(QtWidgets.QMainWindow):
                     # Create an RGBA image with transparency for non-object pixels
                     imcrop_rgba = cv2.cvtColor(imcrop, cv2.COLOR_BGR2BGRA)
                     imcrop_rgba[:, :, 3] = np.where(mask_crop == 1, 255, 0)
+
                     if len(self.segmented_images) - 1 < index:
                         self.segmented_images.append(imcrop_rgba.copy())
                     else:
                         self.segmented_images[index] = (imcrop_rgba.copy())
-                    # Display each segmented object on the side without changing its colors
+
+                    # Create a widget to display the segmented image and add delete/name/crop options
+                    segment_widget = QtWidgets.QWidget(self)
+                    segment_layout = QtWidgets.QVBoxLayout(segment_widget)
+
                     segment_label = QtWidgets.QLabel(self)
                     segment_label.setScaledContents(True)
                     segment_height, segment_width, segment_channel = imcrop_rgba.shape
@@ -290,10 +330,74 @@ class SegmentationApp(QtWidgets.QMainWindow):
                     q_image = QtGui.QImage(cv2.cvtColor(imcrop_rgba, cv2.COLOR_BGRA2RGBA), segment_width, segment_height, bytes_per_line, QtGui.QImage.Format_RGBA8888)
                     pixmap = QtGui.QPixmap.fromImage(q_image)
                     segment_label.setPixmap(pixmap)
-                    self.segmented_images_layout.addWidget(segment_label)
+                    segment_layout.addWidget(segment_label)
+
+                    # Create a horizontal layout for name, crop, and delete options
+                    options_layout = QtWidgets.QHBoxLayout()
+
+                    # Add a line edit for naming the segment
+                    name_edit = QtWidgets.QLineEdit(f"Segment {index + 1}", self)
+                    name_edit.setPlaceholderText("Enter name for the segment")
+                    options_layout.addWidget(name_edit)
+
+                    # Add a crop button with an icon
+                    crop_button = QtWidgets.QPushButton(qta.icon('mdi.crop', color='blue'), '', self)
+                    crop_button.setToolTip("Crop Segment")
+                    crop_button.clicked.connect(lambda _, i=index, label=segment_label: self.crop_segment(i, label))
+                    options_layout.addWidget(crop_button)
+
+                    # Add a delete button with an icon
+                    delete_button = QtWidgets.QPushButton(qta.icon('fa.trash', color='red'), '', self)
+                    delete_button.setToolTip("Delete Segment")
+                    delete_button.clicked.connect(lambda _, i=index: self.delete_segment(i))
+                    options_layout.addWidget(delete_button)
+
+                    segment_layout.addLayout(options_layout)
+
+                    self.segmented_images_layout.addWidget(segment_widget)
 
         # Display the final overlay with masks
         self.display_image(result_overlay)
+        self.save_action.setEnabled(True)
+
+
+    def crop_segment(self, index, label):
+        if 0 <= index < len(self.segmented_images):
+            segment_image = self.segmented_images[index]
+
+            # Convert RGBA to BGR for cropping
+            segment_image_bgr = cv2.cvtColor(segment_image, cv2.COLOR_BGRA2BGR)
+
+            # Use OpenCV's ROI selection tool for cropping
+            roi = cv2.selectROI("Crop Segment", segment_image_bgr, fromCenter=False, showCrosshair=True)
+            cv2.destroyWindow("Crop Segment")
+
+            if roi[2] > 0 and roi[3] > 0:
+                x, y, w, h = map(int, roi)
+                cropped_image = segment_image[y:y+h, x:x+w]
+
+                # Update the segmented image with the cropped version
+                self.segmented_images[index] = cropped_image
+
+                # Update the display in the segmented pane
+                segment_height, segment_width, segment_channel = cropped_image.shape
+                bytes_per_line = segment_channel * segment_width
+                q_image = QtGui.QImage(cv2.cvtColor(cropped_image, cv2.COLOR_BGRA2RGBA), segment_width, segment_height, bytes_per_line, QtGui.QImage.Format_RGBA8888)
+                pixmap = QtGui.QPixmap.fromImage(q_image)
+                label.setPixmap(pixmap)
+
+                print(f"Segment {index + 1} cropped successfully.")
+
+
+    def delete_segment(self, index):
+        if 0 <= index < len(self.segmented_images):
+            del self.segmented_images[index]
+            del self.current_results[index]
+            self.all_points.pop(index)
+            self.object_counter -= 1
+            self.display_results(self.current_results)
+            print(f"Deleted segment {index + 1}")
+
 
     def display_image(self, image):
         # Convert the image to RGB format if it's BGR
@@ -301,6 +405,15 @@ class SegmentationApp(QtWidgets.QMainWindow):
             image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
         elif len(image.shape) == 4:  # RGBA
             image = cv2.cvtColor(image, cv2.COLOR_BGRA2RGBA)
+            # Draw all points on the image if they exist
+        for segment in self.all_points:
+            for point in segment[0]:
+                x, y = point
+                cv2.circle(image, (x, y), 5, (0, 255, 0), -1)
+            for point in segment[1]:
+                x, y = point
+                cv2.circle(image, (x, y), 5, (255, 0, 0), -1)
+
 
         # Resize image to fit within the QLabel while maintaining aspect ratio
         max_width = self.image_label.width()
@@ -326,10 +439,25 @@ class SegmentationApp(QtWidgets.QMainWindow):
     def save_segments(self):
         save_path = QtWidgets.QFileDialog.getExistingDirectory(self, 'Select Directory to Save Segments')
         if save_path:
-            for idx, segment_image in enumerate(self.segmented_images):
-                filename = f"{save_path}/segment_{idx + 1}.png"
+            # Iterate through each segmented widget and save the corresponding image
+            for idx in range(self.segmented_images_layout.count()):
+                segment_widget = self.segmented_images_layout.itemAt(idx).widget()
+                if not segment_widget:
+                    continue
+
+                # Get the segment name from the QLineEdit
+                name_edit = segment_widget.findChild(QtWidgets.QLineEdit)
+                segment_name = name_edit.text() if name_edit and name_edit.text().strip() else f"segment_{idx + 1}"
+
+                # Ensure the name is valid for a file
+                segment_name = "".join(c if c.isalnum() or c in (' ', '-', '_') else "_" for c in segment_name).strip()
+
+                # Save the corresponding image
+                segment_image = self.segmented_images[idx]
+                filename = f"{save_path}/{segment_name}.png"
                 cv2.imwrite(filename, segment_image)
                 print(f"Saved segment {idx + 1} as {filename}")
+
 
     def undo_action_triggered(self):
         if not self.undo_stack:
@@ -340,18 +468,18 @@ class SegmentationApp(QtWidgets.QMainWindow):
         self.redo_action.setEnabled(True)
 
         if action == "mark_point":
-            if self.current_points:
-                self.current_points.pop()
+            if self.current_positive_points:
+                self.current_positive_points.pop()
                 # Redraw the overlay without the last point
                 self.overlay = self.image.copy()
-                for point in self.current_points:
+                for point in self.current_positive_points:
                     cv2.circle(self.overlay, point, 5, (0, 255, 0), -1)
                 self.display_image(self.overlay)
         elif action == "finalize":
             if self.all_points:
                 self.all_points.pop()
                 self.object_counter -= 1
-                self.current_points.clear()
+                self.current_positive_points.clear()
         elif action == "segment" or action == "auto_segment":
             # Restore the segmented images and points
             self.all_points = all_points_backup
@@ -370,13 +498,13 @@ class SegmentationApp(QtWidgets.QMainWindow):
         self.undo_action.setEnabled(True)
 
         if action == "mark_point":
-            self.current_points.append(data)
+            self.current_positive_points.append(data)
             cv2.circle(self.overlay, data, 5, (0, 255, 0), -1)
             self.display_image(self.overlay)
         elif action == "finalize":
-            self.all_points.append(self.current_points[:])
+            self.all_points.append(self.current_positive_points[:])
             self.object_counter += 1
-            self.current_points.clear()
+            self.current_positive_points.clear()
         elif action == "segment" or action == "auto_segment":
             self.display_results(data)
 
@@ -385,7 +513,7 @@ class SegmentationApp(QtWidgets.QMainWindow):
 
     def reset_segments(self):
         # Clear all segments and reset the UI
-        self.current_points.clear()
+        self.current_positive_points.clear()
         self.all_points.clear()
         self.overlay = self.image.copy() if self.image is not None else None
         self.segmented_images.clear()
@@ -396,8 +524,6 @@ class SegmentationApp(QtWidgets.QMainWindow):
         self.undo_action.setEnabled(False)
         self.redo_action.setEnabled(False)
         self.segment_action.setEnabled(False)
-        self.autosegment_action.setEnabled(False)
-        self.mark_points_action.setEnabled(False)
         self.finalize_action.setEnabled(False)
         self.save_action.setEnabled(False)
 

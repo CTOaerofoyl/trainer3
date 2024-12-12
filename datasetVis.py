@@ -14,7 +14,8 @@ def visualize_labels(image_path, label_path):
     cv2.namedWindow("Bounding Boxes", cv2.WINDOW_NORMAL)
 
     for label_file in label_files:
-        image_file = os.path.join(image_path, os.path.splitext(os.path.basename(label_file))[0] + ".jpg")
+        image_file = next((os.path.join(image_path, os.path.splitext(os.path.basename(label_file))[0] + ext) for ext in [".jpg", ".png"] if os.path.exists(os.path.join(image_path, os.path.splitext(os.path.basename(label_file))[0] + ext))), None)
+
 
         if not os.path.exists(image_file):
             print(f"Image file not found for label file: {label_file}")
@@ -59,7 +60,7 @@ def visualize_labels(image_path, label_path):
         cv2.waitKey(0)
 
 # Define paths for train and val label directories
-dataset1_path = "dataset7"
+dataset1_path = "dataset3"
 train_labels_path = f"{dataset1_path}/labels/train"
 val_labels_path = f"{dataset1_path}/labels/val"
 train_images_path = f"{dataset1_path}/images/train"

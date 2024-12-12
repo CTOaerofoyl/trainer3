@@ -10,7 +10,9 @@ import matplotlib.pyplot as plt
 import random
 from ImageTransformer import ImageTransformer
 from ReverseDefisheye import ReverseDefisheye
+from concurrent.futures import ProcessPoolExecutor
 import time
+from functools import partial
 
 MIN_BBOX_SIZE = 10  # Example minimum size for bounding boxes
 class MakeImages:
@@ -21,6 +23,8 @@ class MakeImages:
         self.bip = BIP()
         self.dataset_directory= ''
         self.data_yaml = ''
+        self.transformer = ImageTransformer()
+        self.refisher = ReverseDefisheye()
 
 
 
@@ -162,6 +166,7 @@ class MakeImages:
 
     def mergeImages(self,background ,foreground ,bbox):
         x1,y1,x2,y2 = bbox 
+        
         foreground_resized = cv2.resize(foreground, (x2 - x1, y2 - y1))
         b, g, r, alpha = cv2.split(foreground_resized)
 
@@ -198,17 +203,81 @@ class MakeImages:
             array.append(element)
             return len(array) - 1
         
+    def process(self,belt_data,img,cls_id,clsName,xs,ys,numTrain=2,numVal=1):
+        ip,belt_ref= belt_data
+        
+        print(f'{ip}: cls_name:{clsName}')
+        for folder in ['train','val']:
+            num = numTrain if folder == 'train' else numVal
+            for i in range(0,num):
+                belt=belt_ref.copy()
+                resize_factor=self.bip.getScaleFactor(ip)
+                tryPlacement = True
+                numTries = 0
+                while tryPlacement and numTries<11:
+                    numTries += 1
+                    transformed_img = self.transformer.random_transformation(img)
+                    h,w = transformed_img.shape[:2]
+                    w_res = w*resize_factor
+                    h_res = h*resize_factor
+                    # hb,wb = belt.shape[:2]
+                    rois = self.bip.getRois(ip)
+                    bbox,tryPlacement = self.place_bbox_in_rotated_roi(rois,[w_res,h_res])
+                    # bbox = [(wb-w)//2,(hb-h)//2,(wb+w)//2,(hb+h)//2]
+                    if bbox:
+                        combined = self.mergeImages(belt,transformed_img,bbox)
+                        defishParams=self.bip.getdefishParams(ip)
+                        padding_info = self.bip.getPadding_info(ip)
+                        if defishParams:
+                            fov,pfov =defishParams[0],defishParams[1]
+                        else:
+                            fov = 145
+                            pfov = 128
+                        refished = self.refisher.distort(combined,fov=fov,pfov=pfov)
+                        h,w = refished.shape[:2]
+                        x1,y1,x2,y2 = bbox
+                        x_tl = int(ys[x1,y1])
+                        x_bl = int(ys[x1,y2])
+                        x_tr = int(ys[x2,y1])
+                        x_br = int(ys[x2,y2])
+                        y_tl = int(xs[x1,y1])
+                        y_bl = int(xs[x1,y2])
+                        y_tr = int(xs[x2,y1])
+                        y_br = int(xs[x2,y2])
 
+                        x1_t,y1_t = (min(x_tl,x_bl),min(y_tl,y_tr))
+                        x2_t,y2_t = (max(x_tr,x_br),max(y_bl,y_br))
 
-    def makeImage(self,classes_to_skip=[]):
+                        # x1_t,y1_t = refisher.get_distorted_coordinates(y1,x1,fov=fov,pfov=pfov,width=w,height=h)
+                        # x2_t,y2_t = refisher.get_distorted_coordinates(y2,x2,fov=fov,pfov=pfov,width=w,height=h)
+                        x1_t -= padding_info['left']
+                        x2_t -= padding_info['left']
+                        y1_t -= padding_info['top']
+                        y2_t -= padding_info['top']
+
+                        depadded = self.bip.remove_padding(refished,ip,padding_info)
+                        w_t = w - padding_info['left'] - padding_info['right']
+                        h_t = h - padding_info['top'] - padding_info['bottom']
+                        x_center = (x1_t + x2_t) / 2
+                        y_center = (y1_t + y2_t) / 2
+                        width = x2_t - x1_t
+                        height = y2_t - y1_t
+
+                        cv2.imwrite(f'{self.dataset_directory}/images/{folder}/{ip}_{clsName}_{i}.jpg',depadded)
+                        with open(f"{self.dataset_directory}/data.yaml", "w") as file:
+                            yaml.dump(self.data_yaml, file, default_flow_style=False)  
+                        with open(f'{self.dataset_directory}/labels/{folder}/{ip}_{clsName}_{i}.txt','w') as f:
+                            f.writelines(f'{cls_id} {x_center/w_t} {y_center/h_t} {width/w_t} {height/h_t}')
+
+    
+    def makeImage(self,classes_to_skip=[],numTrain=2,numVal = 1):
         data = np.load('defisheye_maps.npz')
 
         # Access individual matrices
         xs = data['xs']
         ys = data['ys']
 
-        transformer = ImageTransformer()
-        refisher = ReverseDefisheye()
+        
 
         for clsName,img in self.crops.items():
             cls = clsName.split('_')[0]
@@ -216,87 +285,29 @@ class MakeImages:
             self.data_yaml['nc']=len(self.data_yaml['names'])
             if cls in classes_to_skip:
                 continue
-            for ip,belt_ref in self.belts.items():
-                for folder in ['train','val']:
-                    num = 5 if folder == 'train' else 1
-                    for i in range(0,num):
-                        belt=belt_ref.copy()
-                        img_copy = img.copy()
-                        resize_factor=self.bip.getScaleFactor(ip)
-                        tryPlacement = True
-                        numTries = 0
-                        while tryPlacement and numTries<11:
-                            numTries += 1
-                            transformed_img = transformer.random_transformation(img)
-                            h,w = transformed_img.shape[:2]
-                            w_res = w*resize_factor
-                            h_res = h*resize_factor
-                            # hb,wb = belt.shape[:2]
-                            rois = self.bip.getRois(ip)
-                            print(ip,rois)
-                            bbox,tryPlacement = self.place_bbox_in_rotated_roi(rois,[w_res,h_res])
-                            # bbox = [(wb-w)//2,(hb-h)//2,(wb+w)//2,(hb+h)//2]
-                            if bbox:
-                                combined = self.mergeImages(belt,transformed_img,bbox)
-                                defishParams=self.bip.getdefishParams(ip)
-                                padding_info = self.bip.getPadding_info(ip)
-                                if defishParams:
-                                    fov,pfov =defishParams[0],defishParams[1]
-                                else:
-                                    fov = 145
-                                    pfov = 128
-                                refished = refisher.distort(combined,fov=fov,pfov=pfov)
-                                h,w = refished.shape[:2]
-                                x1,y1,x2,y2 = bbox
-                                x_tl = int(ys[x1,y1])
-                                x_bl = int(ys[x1,y2])
-                                x_tr = int(ys[x2,y1])
-                                x_br = int(ys[x2,y2])
-                                y_tl = int(xs[x1,y1])
-                                y_bl = int(xs[x1,y2])
-                                y_tr = int(xs[x2,y1])
-                                y_br = int(xs[x2,y2])
+            partial_function = partial(self.process,img=img,cls_id=cls_id,clsName=clsName,xs=xs,ys=ys,numTrain=numTrain,numVal = numVal)
+            with ProcessPoolExecutor() as executor:
+                    results = executor.map(partial_function, self.belts.items())
+            # for ip,belt_ref in self.belts.items():
+            #    self.process(belt_ref=belt_ref,img=img,ip=ip,cls_id=cls_id,clsName=clsName,xs=xs,ys=ys)
 
-                                x1_t,y1_t = (min(x_tl,x_bl),min(y_tl,y_tr))
-                                x2_t,y2_t = (max(x_tr,x_br),max(y_bl,y_br))
+        # np.save('defisheye_maps.npz',data)
 
-                                # x1_t,y1_t = refisher.get_distorted_coordinates(y1,x1,fov=fov,pfov=pfov,width=w,height=h)
-                                # x2_t,y2_t = refisher.get_distorted_coordinates(y2,x2,fov=fov,pfov=pfov,width=w,height=h)
-                                x1_t -= padding_info['left']
-                                x2_t -= padding_info['left']
-                                y1_t -= padding_info['top']
-                                y2_t -= padding_info['top']
 
-                                depadded = self.bip.remove_padding(refished,ip,padding_info)
-                                w_t = w - padding_info['left'] - padding_info['right']
-                                h_t = h - padding_info['top'] - padding_info['bottom']
-                                x_center = (x1_t + x2_t) / 2
-                                y_center = (y1_t + y2_t) / 2
-                                width = x2_t - x1_t
-                                height = y2_t - y1_t
-
-                                cv2.imwrite(f'{self.dataset_directory}/images/{folder}/{ip}_{clsName}_{i}.jpg',depadded)
-                                with open(f"{self.dataset_directory}/data.yaml", "w") as file:
-                                    yaml.dump(self.data_yaml, file, default_flow_style=False)  
-                                with open(f'{self.dataset_directory}/labels/{folder}/{ip}_{clsName}_{i}.txt','w') as f:
-                                    f.writelines(f'{cls_id} {x_center/w_t} {y_center/h_t} {width/w_t} {height/h_t}')
-                                # cv2.rectangle(depadded, (x1_t,y1_t),(x2_t,y2_t), (255, 0, 0) , thickness=4)
-                                # self.bip.show_images_sidebyside(combined,refished,depadded,transformed_img)
-                    
-                    # return
 
 
 
 
 if __name__=='__main__':
     start_time = time.time()
-
     imagemaker = MakeImages()
-    imagemaker.createDatasetDirectory('dataset0')
-    
+    imagemaker.createDatasetDirectory('dataset4')
+    numTrain=2
+    numVal = 1
     classes_to_skip=[]
-    imagemaker.makeImage(classes_to_skip)
+    imagemaker.makeImage(classes_to_skip,numTrain=numTrain,numVal=numVal)
     end_time = time.time()
-    print(f"Total Time: {end_time - start_time} seconds")
+    print(f"Time taken: {end_time - start_time} seconds")
+
 
 

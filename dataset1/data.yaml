@@ -1,6 +1,11 @@
 names:
 - bag1
-nc: 1
+- bag2
+- box1
+- p1
+- p2
+- bag3
+nc: 6
 path: dataset1
 train: images/train
 val: images/val

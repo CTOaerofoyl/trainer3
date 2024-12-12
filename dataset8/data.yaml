@@ -1,7 +1,0 @@
-names:
-- bag1
-- bag2
-nc: 2
-path: dataset8
-train: images/train
-val: images/val
